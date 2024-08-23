@@ -5,8 +5,10 @@ import { xml } from '@xmpp/client';
 function ChatWindow({ contact }) {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
+  const [file, setFile] = useState(null);
   const { xmppClient, user } = useUser();
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     setMessages([]);
@@ -16,10 +18,11 @@ function ChatWindow({ contact }) {
         if (stanza.is('message')) {
           const from = stanza.attrs.from.split('/')[0];
           const body = stanza.getChildText('body');
+          const mimeType = stanza.getChildText('mime');
 
           if (body) {
             if (stanza.attrs.type === 'chat' && from === contact.jid) {
-              setMessages(prev => [...prev, { from: 'them', content: body }]);
+              setMessages(prev => [...prev, { from: 'them', content: body, mimeType }]);
             } else if (stanza.attrs.type === 'groupchat') {
               const groupJid = stanza.attrs.from.split('/')[0];
               const sender = stanza.attrs.from.split('/')[1];
@@ -29,6 +32,7 @@ function ChatWindow({ contact }) {
                 setMessages(prev => [...prev, { 
                   from: isCurrentUser ? 'me' : sender, 
                   content: body, 
+                  mimeType,
                   group: true 
                 }]);
               }
@@ -46,23 +50,71 @@ function ChatWindow({ contact }) {
   }, [xmppClient, contact, user]);
 
   const sendMessage = () => {
-    if (inputMessage.trim() && xmppClient && contact) {
+    if ((inputMessage.trim() || file) && xmppClient && contact) {
       const messageType = contact.isGroup ? 'groupchat' : 'chat';
 
-      xmppClient.send(
-        xml('message', { to: contact.jid, type: messageType },
-          xml('body', {}, inputMessage)
-        )
-      );
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const fileData = e.target.result;
+          const base64File = `data:${file.type};base64,${btoa(
+            new Uint8Array(fileData).reduce((data, byte) => data + String.fromCharCode(byte), '')
+          )}`;
+          const fileMessage = base64File;
 
-      setMessages(prev => [...prev, { 
-        from: 'me', 
-        content: inputMessage, 
-        group: contact.isGroup 
-      }]);
+          xmppClient.send(
+            xml('message', { to: contact.jid, type: messageType },
+              xml('body', {}, fileMessage),
+              xml('mime', {}, file.type)
+            )
+          );
+
+          setMessages(prev => [...prev, { 
+            from: 'me', 
+            content: fileMessage, 
+            group: contact.isGroup,
+            isFile: true,
+            mimeType: file.type
+          }]);
+
+          setFile(null);
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        xmppClient.send(
+          xml('message', { to: contact.jid, type: messageType },
+            xml('body', {}, inputMessage)
+          )
+        );
+
+        setMessages(prev => [...prev, { 
+          from: 'me', 
+          content: inputMessage, 
+          group: contact.isGroup 
+        }]);
+      }
 
       setInputMessage('');
     }
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const renderFileContent = (content, mimeType) => {
+    if (content.startsWith('data:')) {
+      if (mimeType.startsWith('image/')) {
+        return <img src={content} alt="Imagen recibida" style={styles.filePreview} />;
+      } else if (mimeType === 'application/pdf') {
+        return <a href={content} target="_blank" rel="noopener noreferrer">Ver PDF</a>;
+      } else {
+        return <a href={content} target="_blank" rel="noopener noreferrer">Archivo</a>;
+      }
+    }
+    return content;
   };
 
   useEffect(() => {
@@ -84,7 +136,7 @@ function ChatWindow({ contact }) {
         {messages.map((msg, index) => (
           <div key={index} style={msg.from === 'me' ? styles.myMessage : styles.theirMessage}>
             {msg.group && msg.from !== 'me' && <strong>{msg.from}: </strong>}
-            {msg.content}
+            {msg.isFile ? renderFileContent(msg.content, msg.mimeType) : msg.content}
           </div>
         ))}
         <div ref={messagesEndRef} />
@@ -98,6 +150,15 @@ function ChatWindow({ contact }) {
           style={styles.input}
           placeholder="Escribe un mensaje..."
         />
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+        />
+        <button onClick={() => fileInputRef.current.click()} style={styles.clipButton}>
+          📎
+        </button>
         <button onClick={sendMessage} style={styles.sendButton}>Enviar</button>
       </div>
     </div>
@@ -168,6 +229,19 @@ const styles = {
     border: 'none',
     borderRadius: '20px',
     cursor: 'pointer',
+  },
+  clipButton: {
+    padding: '10px',
+    backgroundColor: '#f1f1f1',
+    border: 'none',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    marginRight: '10px',
+    fontSize: '20px',
+  },
+  filePreview: {
+    maxWidth: '100%',
+    borderRadius: '10px',
   },
 };
 
