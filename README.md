@@ -26,7 +26,7 @@ Este proyecto es un cliente de chat XMPP implementado utilizando React y nodejs.
 Para ejecutar este proyecto localmente, sigue estos pasos:
 
 1. Clona el repositorio: https://github.com/DiegoValdez10/Proyecto1-Redes
-2. Instala las dependencias tanto para el frontend como para el backend:
+2. Instala las dependencias tanto para el frontend:
    cd Proyecto1-Redes
    npm install
 3. En una nueva terminal, inicia el frontend:
